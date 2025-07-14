@@ -26,8 +26,8 @@ with tab1:
         submitted = st.form_submit_button("Save order")
         if submitted:
             data_loader.save_order(
-                data_logic.get_ticker_from_isin(isin),
-                isin,
+                data_logic.get_ticker_from_isin(isin[0]),
+                isin[0],
                 quantity,
                 price,
                 date,
@@ -62,7 +62,7 @@ with tab3:
         submitted = st.form_submit_button("Save value")
         if submitted:
             data_loader.save_price(
-                data_logic.get_ticker_from_isin(isin), isin, price, date
+                data_logic.get_ticker_from_isin(isin[0]), isin[0], price, date
             )
             st.success("Value saved!")
 
