@@ -27,25 +27,10 @@ def get_isin_from_ticker(ticker: str):
     return detail["ISIN"]
 
 
-# TODO: review the function
 def get_current_portfolio_composition():
     orders = data_loader.load_orders()
-    if orders.empty:
-        return pd.DataFrame()
-
-    orders["Quantità"] = orders.apply(
-        lambda row: row["Quantità"] if row["Operazione"] == "Buy" else -row["Quantità"],
-        axis=1,
-    )
-    agg = orders.groupby("Ticker")["Quantità"].sum().reset_index()
-    return agg[agg["Quantità"] > 0]
-
-
-# TODO: review the function
-def get_portfolio_evolution():
-    orders = data_loader.load_orders()
     prices = data_loader.load_prices()
-
+    
     if orders.empty or prices.empty:
         return pd.DataFrame()
 
@@ -53,26 +38,79 @@ def get_portfolio_evolution():
         lambda row: row["Quantità"] if row["Operazione"] == "Buy" else -row["Quantità"],
         axis=1,
     )
-    orders["Spesa"] = orders["Quantità"] * orders["Prezzo"]
-    orders = orders.sort_values("Data")
-    prices = prices.sort_values("Data")
+    
+    # Group by Ticker and sum quantities
+    portfolio_qty = orders.groupby("Ticker")["Quantità"].sum().reset_index()
+    portfolio_qty = portfolio_qty[portfolio_qty["Quantità"] > 0]
+    
+    # Get the latest prices for each ticker
+    latest_prices = prices.groupby("Ticker")["Valore"].last().reset_index()
+    latest_prices.columns = ["Ticker", "Prezzo_Attuale"]
+    
+    # Merge the portfolio quantities with the latest prices
+    portfolio_composition = pd.merge(portfolio_qty, latest_prices, on="Ticker", how="left")
+    
+    # Calculate total value for each ticker
+    portfolio_composition["Valore_Totale"] = portfolio_composition["Quantità"] * portfolio_composition["Prezzo_Attuale"]
+    
+    return portfolio_composition
 
-    spend_data = orders.groupby("Data")["Spesa"].sum().cumsum().reset_index()
-    spend_data.columns = ["Data", "Soldi Spesi"]
 
-    merged = pd.merge(
-        prices, orders[["Ticker", "ISIN", "Quantità"]], on=["Ticker", "ISIN"]
+def get_portfolio_evolution():
+    orders = data_loader.load_orders()
+    prices = data_loader.load_prices()
+
+    if orders.empty or prices.empty:
+        return pd.DataFrame()
+
+    # Prepare orders data
+    orders["Data"] = pd.to_datetime(orders["Data"])
+    orders["Quantità"] = orders.apply(
+        lambda row: row["Quantità"] if row["Operazione"] == "Buy" else -row["Quantità"], axis=1
     )
-    merged["Valore"] = merged["Valore"] * merged["Quantità"]
-    value_data = merged.groupby("Data")["Valore"].sum().reset_index()
-    value_data.columns = ["Data", "Valore Portafoglio"]
+    orders["Spesa"] = orders["Quantità"] * orders["Prezzo"]
+    
+    # Prepare prices data
+    prices["Data"] = pd.to_datetime(prices["Data"])
+    
+    # Create a complete date range from the minimum to the maximum date in both orders and prices
+    start_date = min(prices["Data"].min(), orders["Data"].min())
+    end_date = max(prices["Data"].max(), orders["Data"].max())
+    all_dates = pd.date_range(start=start_date, end=end_date, freq='D')
+    
+    # 1. Calculate daily spend
+    daily_spend = orders.groupby("Data")["Spesa"].sum()
+    cumulative_spend = daily_spend.reindex(all_dates, fill_value=0).cumsum()
+    
+    # 2. Calculate daily quantities
+    daily_qty = orders.groupby(["Data", "Ticker"])["Quantità"].sum().unstack(fill_value=0)
+    cumulative_qty = daily_qty.reindex(all_dates, fill_value=0).cumsum().fillna(method='ffill').fillna(0)
+    
+    # 3. Prepare prices for each date
+    daily_prices = prices.pivot(index="Data", columns="Ticker", values="Valore")
+    daily_prices = daily_prices.reindex(all_dates).fillna(method='ffill').fillna(0)
+    
+    # 4. Calculate portfolio value for each date
+    portfolio_values = []
+    for date in all_dates:
+        daily_value = 0
+        for ticker in cumulative_qty.columns:
+            if ticker in daily_prices.columns:
+                qty = cumulative_qty.loc[date, ticker]
+                price = daily_prices.loc[date, ticker]
+                daily_value += qty * price
+        portfolio_values.append(daily_value)
+    
+    # 5. Create result DataFrame
+    result = pd.DataFrame({
+        "Data": all_dates,
+        "Soldi Spesi": cumulative_spend.values,
+        "Valore Portafoglio": portfolio_values
+    })
+    
+    return result
 
-    df = pd.merge(spend_data, value_data, on="Data", how="outer").sort_values("Data")
-    df.fillna(method="ffill", inplace=True)
-    return df
 
-
-# TODO: review the function
 def get_summary_metrics():
     orders = data_loader.load_orders()
     prices = data_loader.load_prices()
