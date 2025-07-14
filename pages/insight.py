@@ -3,7 +3,7 @@ from src import plots
 
 st.subheader("📈 Analisi e Andamento del Portafoglio")
 
-tab1, tab2, tab3 = st.tabs(["📊 Composizione", "📉 Evoluzione", "📌 Riepilogo"])
+tab1, tab2, tab3 = st.tabs(["📌 Riepilogo", "📉 Evoluzione", "📊 Composizione"])
 
 with tab1:
     st.markdown("### Riepilogo del Portafoglio")
